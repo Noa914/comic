@@ -1,0 +1,469 @@
+<title>컷넘김 뷰어</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Sans+KR:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: one-screen reader. Slim control bar on top, page stage fills the rest; wide screens show a two-page spread, tall screens one page. */
+:root{
+  --ink:#121317;
+  --surface:#1C1E24;
+  --raise:#272A33;
+  --line:#363A46;
+  --fg:#ECEAE4;
+  --muted:#9A9DA8;
+  --accent:#F2B84B;
+  --accent-ink:#1A1408;
+  --font-logo:"Black Han Sans","IBM Plex Sans KR",system-ui,sans-serif;
+  --font-ui:"IBM Plex Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --font-num:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{height:100%;background:var(--ink)}
+body{height:100%;margin:0;background:var(--ink);color:var(--fg);font-family:var(--font-ui);font-size:14px;overflow:hidden;-webkit-tap-highlight-color:transparent}
+button,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+#app{height:100%;display:grid;grid-template-rows:auto auto minmax(0,1fr)}
+#app.ui-hidden .bar,#app.ui-hidden .progress{display:none}
+
+/* ---------- top bar ---------- */
+.bar{position:relative;z-index:20;display:flex;align-items:center;gap:10px;padding-block:8px;padding-inline:16px;background:var(--surface);border-bottom:1px solid var(--line)}
+.brand{font-family:var(--font-logo);font-size:20px;letter-spacing:.02em;color:var(--fg);white-space:nowrap}
+.brand b{color:var(--accent);font-weight:400}
+.pager{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;min-width:0}
+.btn{height:40px;min-width:40px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:var(--raise);display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;transition:background .15s,border-color .15s}
+.btn:hover:not(:disabled){border-color:var(--muted)}
+.btn:disabled{opacity:.35;cursor:default}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.btn.ghost{background:transparent}
+.btn .arrow{font-size:20px;line-height:1;margin-top:-2px}
+.pagepick{display:flex;align-items:center;gap:6px;font-family:var(--font-num);font-variant-numeric:tabular-nums}
+.pagepick select{appearance:none;-webkit-appearance:none;height:40px;min-width:4.6em;padding:0 26px 0 12px;border-radius:10px;border:1px solid var(--accent);background:var(--ink) no-repeat right 9px center/10px 6px;background-image:linear-gradient(45deg,transparent 50%,var(--accent) 50%),linear-gradient(-45deg,transparent 50%,var(--accent) 50%);background-size:5px 5px,5px 5px;background-position:right 14px center,right 9px center;font-family:var(--font-num);font-size:15px;text-align:center;cursor:pointer}
+.pagepick .total{color:var(--muted);font-size:14px;white-space:nowrap}
+
+.progress{height:3px;background:var(--line)}
+.progress span{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+
+/* ---------- settings panel ---------- */
+.panel{position:absolute;top:calc(100% + 8px);right:16px;width:min(340px,calc(100vw - 32px));background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;display:grid;gap:14px;box-shadow:0 18px 40px rgba(0,0,0,.45)}
+.panel .row{display:grid;gap:6px}
+.panel .lbl{font-size:12px;color:var(--muted);letter-spacing:.04em}
+.seg{display:flex;background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:3px;gap:3px}
+.seg button{flex:1;height:34px;border:0;border-radius:7px;background:transparent;color:var(--muted);font-size:13px}
+.seg button[aria-pressed="true"]{background:var(--raise);color:var(--fg);box-shadow:inset 0 0 0 1px var(--accent)}
+.panel .acts{display:flex;gap:8px;flex-wrap:wrap}
+.panel .acts .btn{flex:1}
+.panel .info{margin:0;font-size:12px;line-height:1.6;color:var(--muted);overflow-wrap:anywhere}
+.panel .info strong{color:var(--fg);font-weight:500}
+
+/* ---------- stage ---------- */
+.stage{position:relative;overflow:hidden;padding:8px;user-select:none;-webkit-user-select:none;cursor:pointer}
+.spread{height:100%;width:100%;display:flex;align-items:center;justify-content:center}
+.spread.rtl{flex-direction:row-reverse}
+.spread img{display:block;max-width:100%;max-height:100%;width:auto;height:auto;flex:0 1 auto;min-width:0;object-fit:contain;-webkit-user-drag:none;box-shadow:0 2px 14px rgba(0,0,0,.4)}
+.spread.two img{max-width:50%}
+.spread.two img:first-child{box-shadow:-2px 2px 14px rgba(0,0,0,.4)}
+
+.zones{position:absolute;inset:8px;display:grid;grid-template-columns:1fr 1fr 1fr;pointer-events:none;transition:opacity .6s}
+.zones.gone{opacity:0}
+.zones div{display:flex;align-items:center;justify-content:center;border:1px dashed rgba(242,184,75,.55);background:rgba(18,19,23,.35);color:var(--fg);font-size:13px;text-align:center;line-height:1.5;padding:8px}
+.zones div+div{border-left:0}
+
+.corner{position:absolute;right:16px;bottom:12px;padding:4px 10px;border-radius:999px;background:rgba(18,19,23,.75);border:1px solid var(--line);font-family:var(--font-num);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;pointer-events:none}
+
+.banner{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);width:min(560px,calc(100% - 32px));display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 12px 30px rgba(0,0,0,.45);cursor:default}
+.banner p{margin:0;flex:1 1 220px;font-size:13px;line-height:1.55;color:var(--muted)}
+.banner p strong{color:var(--fg);font-weight:500}
+.banner .acts{display:flex;gap:8px}
+
+.drop{position:fixed;inset:12px;z-index:50;display:flex;align-items:center;justify-content:center;border:2px dashed var(--accent);border-radius:18px;background:rgba(18,19,23,.88);font-size:18px;color:var(--fg);pointer-events:none}
+
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translate(-50%,8px);z-index:60;max-width:calc(100vw - 32px);padding:10px 16px;border-radius:999px;background:var(--fg);color:var(--ink);font-size:13px;font-weight:500;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+@media (max-width:640px){
+  .bar{gap:6px}
+  .brand,.wide-only,.btn .t{display:none}
+  .btn{padding:0 10px}
+  .pagepick select{min-width:4em;padding-right:22px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div id="app">
+  <header class="bar" id="bar">
+    <div class="brand">컷<b>넘김</b></div>
+    <button class="btn primary" id="openBtn" type="button">열기</button>
+    <nav class="pager" aria-label="페이지 이동">
+      <button class="btn ghost wide-only" id="firstBtn" type="button" aria-label="첫 페이지">«</button>
+      <button class="btn" id="prevBtn" type="button" aria-label="이전 페이지"><span class="arrow">‹</span><span class="t">이전</span></button>
+      <div class="pagepick">
+        <select id="pageSel" aria-label="페이지 선택"></select>
+        <span class="total" id="total">/ 0</span>
+      </div>
+      <button class="btn" id="nextBtn" type="button" aria-label="다음 페이지"><span class="t">다음</span><span class="arrow">›</span></button>
+      <button class="btn ghost wide-only" id="lastBtn" type="button" aria-label="마지막 페이지">»</button>
+    </nav>
+    <button class="btn" id="setBtn" type="button" aria-expanded="false" aria-controls="panel">보기</button>
+
+    <div class="panel" id="panel" hidden>
+      <div class="row">
+        <span class="lbl">쪽 배치</span>
+        <div class="seg" data-key="mode">
+          <button type="button" data-v="auto">자동</button>
+          <button type="button" data-v="single">한 쪽</button>
+          <button type="button" data-v="spread">두 쪽</button>
+        </div>
+      </div>
+      <div class="row">
+        <span class="lbl">읽는 방향</span>
+        <div class="seg" data-key="dir">
+          <button type="button" data-v="ltr">왼쪽 → 오른쪽</button>
+          <button type="button" data-v="rtl">오른쪽 → 왼쪽</button>
+        </div>
+      </div>
+      <div class="row">
+        <span class="lbl">첫 페이지 (두 쪽 보기일 때)</span>
+        <div class="seg" data-key="cover">
+          <button type="button" data-v="solo">표지만 따로</button>
+          <button type="button" data-v="pair">처음부터 짝지어</button>
+        </div>
+      </div>
+      <div class="acts">
+        <button class="btn" id="dirBtn" type="button">폴더 열기</button>
+        <button class="btn" id="fsBtn" type="button">전체 화면</button>
+      </div>
+      <p class="info" id="info"></p>
+    </div>
+  </header>
+
+  <div class="progress" aria-hidden="true"><span id="prog"></span></div>
+
+  <main class="stage" id="stage">
+    <div class="spread" id="spread">
+      <img id="imgA" alt="">
+      <img id="imgB" alt="" hidden>
+    </div>
+    <div class="zones" id="zones" aria-hidden="true">
+      <div id="zL">이전 쪽</div>
+      <div>메뉴 숨기기 / 보이기</div>
+      <div id="zR">다음 쪽</div>
+    </div>
+    <div class="corner" id="corner" hidden></div>
+    <div class="banner" id="banner">
+      <p><strong>예시 페이지 6장</strong>을 보고 있어요. 이미지를 여러 장 고르거나 폴더째 불러오세요. 파일을 화면에 끌어다 놓아도 돼요.</p>
+      <div class="acts">
+        <button class="btn primary" id="bOpen" type="button">이미지 열기</button>
+        <button class="btn" id="bDir" type="button">폴더 열기</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="drop" id="drop" hidden>여기에 놓으면 불러와요</div>
+<div class="toast" id="toast" role="status"></div>
+<input type="file" id="fileIn" multiple accept="image/*" hidden>
+<input type="file" id="folderIn" webkitdirectory multiple hidden>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const app = $('app'), stage = $('stage'), spread = $('spread'), imgA = $('imgA'), imgB = $('imgB');
+  const pageSel = $('pageSel'), total = $('total'), prog = $('prog'), panel = $('panel'), setBtn = $('setBtn');
+  const collator = new Intl.Collator('ko', { numeric: true, sensitivity: 'base' });
+  const IMG_RE = /\.(jpe?g|png|gif|webp|avif|bmp|jfif)$/i;
+
+  const S = { pages: [], idx: 0, sample: true, mode: 'auto', dir: 'ltr', cover: 'solo' };
+  try {
+    const saved = JSON.parse(localStorage.getItem('cutnumgim-settings') || '{}');
+    ['mode', 'dir', 'cover'].forEach(k => { if (saved[k]) S[k] = saved[k]; });
+  } catch (e) {}
+  const saveSettings = () => { try { localStorage.setItem('cutnumgim-settings', JSON.stringify({ mode: S.mode, dir: S.dir, cover: S.cover })); } catch (e) {} };
+
+  /* ---------- toast ---------- */
+  let toastT;
+  function toast(msg) {
+    const t = $('toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 1800);
+  }
+
+  /* ---------- layout ---------- */
+  function wideScreen() { return innerWidth / innerHeight > 1.15 && innerWidth >= 720; }
+  function isSpread() { return S.mode === 'spread' || (S.mode === 'auto' && wideScreen()); }
+  function startOf(i) {
+    if (!isSpread()) return i;
+    if (S.cover === 'solo') return i <= 0 ? 0 : 1 + Math.floor((i - 1) / 2) * 2;
+    return Math.floor(i / 2) * 2;
+  }
+  function shown() {
+    const n = S.pages.length; if (!n) return [];
+    const s = startOf(S.idx);
+    if (!isSpread() || (S.cover === 'solo' && s === 0) || s + 1 >= n) return [s];
+    return [s, s + 1];
+  }
+
+  /* ---------- navigation ---------- */
+  function go(i) {
+    const n = S.pages.length; if (!n) return;
+    S.idx = startOf(Math.max(0, Math.min(n - 1, i)));
+    render();
+  }
+  function next() {
+    const sh = shown(); if (!sh.length) return;
+    if (sh[sh.length - 1] >= S.pages.length - 1) { toast('마지막 페이지예요'); return; }
+    go(sh[sh.length - 1] + 1);
+  }
+  function prev() {
+    const sh = shown(); if (!sh.length) return;
+    if (sh[0] === 0) { toast('첫 페이지예요'); return; }
+    go(startOf(sh[0] - 1));
+  }
+  // physical side of the screen -> forward/back depending on reading direction
+  function side(which) { ((which === 'right') === (S.dir === 'ltr')) ? next() : prev(); }
+
+  /* ---------- render ---------- */
+  function buildSelect() {
+    const frag = document.createDocumentFragment();
+    S.pages.forEach((p, i) => { const o = document.createElement('option'); o.value = i; o.textContent = i + 1; frag.appendChild(o); });
+    pageSel.replaceChildren(frag);
+  }
+  function render() {
+    const n = S.pages.length, sh = shown();
+    if (!n) return;
+    imgA.src = S.pages[sh[0]].url; imgA.alt = (sh[0] + 1) + '쪽';
+    if (sh.length > 1) { imgB.hidden = false; imgB.src = S.pages[sh[1]].url; imgB.alt = (sh[1] + 1) + '쪽'; }
+    else { imgB.hidden = true; imgB.removeAttribute('src'); }
+    spread.classList.toggle('two', sh.length > 1);
+    spread.classList.toggle('rtl', S.dir === 'rtl');
+    pageSel.value = String(sh[0]);
+    const last = sh[sh.length - 1];
+    total.textContent = (sh.length > 1 ? '–' + (last + 1) + ' ' : '') + '/ ' + n;
+    $('corner').textContent = (sh.length > 1 ? (sh[0] + 1) + '–' + (last + 1) : (sh[0] + 1)) + ' / ' + n;
+    prog.style.width = ((last + 1) / n * 100) + '%';
+    $('prevBtn').disabled = $('firstBtn').disabled = sh[0] === 0;
+    $('nextBtn').disabled = $('lastBtn').disabled = last >= n - 1;
+    $('zL').textContent = S.dir === 'ltr' ? '이전 쪽' : '다음 쪽';
+    $('zR').textContent = S.dir === 'ltr' ? '다음 쪽' : '이전 쪽';
+    updateInfo();
+    preload(last);
+  }
+  function preload(last) {
+    for (let k = last + 1; k <= last + 4 && k < S.pages.length; k++) { const im = new Image(); im.src = S.pages[k].url; }
+  }
+  function updateInfo() {
+    const sh = shown();
+    const layout = isSpread() ? '두 쪽' : '한 쪽';
+    const why = S.mode === 'auto' ? (wideScreen() ? ' (가로로 넓은 화면)' : ' (세로로 긴 화면)') : '';
+    const names = sh.map(i => S.pages[i].name).join(', ');
+    $('info').innerHTML = '';
+    const a = document.createElement('div'); a.innerHTML = '지금 배치: <strong></strong>'; a.querySelector('strong').textContent = layout + why;
+    const b = document.createElement('div'); b.innerHTML = '파일: <strong></strong>'; b.querySelector('strong').textContent = names || '—';
+    $('info').append(a, b);
+  }
+  function syncSegs() {
+    document.querySelectorAll('.seg').forEach(seg => {
+      seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === S[seg.dataset.key])));
+    });
+  }
+
+  /* ---------- loading ---------- */
+  function loadEntries(list) {
+    const items = list.filter(x => (x.file.type || '').startsWith('image/') || IMG_RE.test(x.file.name));
+    if (!items.length) { toast('이미지 파일을 찾지 못했어요. JPG, PNG, WEBP, GIF를 열 수 있어요.'); return; }
+    items.sort((a, b) => collator.compare(a.path, b.path));
+    S.pages.forEach(p => { if (p.url.startsWith('blob:')) URL.revokeObjectURL(p.url); });
+    S.pages = items.map(x => ({ url: URL.createObjectURL(x.file), name: x.path }));
+    S.sample = false; S.idx = 0;
+    $('banner').hidden = true;
+    buildSelect(); render();
+    toast(items.length + '장을 불러왔어요');
+  }
+  const fromFileList = fl => [...fl].map(f => ({ file: f, path: f.webkitRelativePath || f.name }));
+  $('fileIn').addEventListener('change', e => { loadEntries(fromFileList(e.target.files)); e.target.value = ''; });
+  $('folderIn').addEventListener('change', e => { loadEntries(fromFileList(e.target.files)); e.target.value = ''; });
+  const openFiles = () => $('fileIn').click();
+  const openFolder = () => $('folderIn').click();
+  $('openBtn').addEventListener('click', openFiles);
+  $('bOpen').addEventListener('click', openFiles);
+  $('dirBtn').addEventListener('click', () => { closePanel(); openFolder(); });
+  $('bDir').addEventListener('click', openFolder);
+
+  // drag & drop, including whole folders
+  let dragDepth = 0;
+  addEventListener('dragenter', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { dragDepth++; $('drop').hidden = false; } });
+  addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $('drop').hidden = true; });
+  addEventListener('dragover', e => e.preventDefault());
+  addEventListener('drop', async e => {
+    e.preventDefault(); dragDepth = 0; $('drop').hidden = true;
+    const dt = e.dataTransfer; if (!dt) return;
+    const entries = [...(dt.items || [])].map(it => it.webkitGetAsEntry && it.webkitGetAsEntry()).filter(Boolean);
+    if (!entries.length) { loadEntries(fromFileList(dt.files)); return; }
+    const out = [];
+    async function walk(entry, path) {
+      if (entry.isFile) {
+        const f = await new Promise((res, rej) => entry.file(res, rej));
+        out.push({ file: f, path: path + f.name });
+      } else if (entry.isDirectory) {
+        const reader = entry.createReader(); let batch;
+        do {
+          batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+          for (const b of batch) await walk(b, path + entry.name + '/');
+        } while (batch.length);
+      }
+    }
+    try { for (const en of entries) await walk(en, ''); loadEntries(out); }
+    catch (err) { loadEntries(fromFileList(dt.files)); }
+  });
+
+  /* ---------- controls ---------- */
+  $('prevBtn').addEventListener('click', prev);
+  $('nextBtn').addEventListener('click', next);
+  $('firstBtn').addEventListener('click', () => go(0));
+  $('lastBtn').addEventListener('click', () => go(S.pages.length - 1));
+  pageSel.addEventListener('change', () => go(+pageSel.value));
+
+  function openPanel() { panel.hidden = false; setBtn.setAttribute('aria-expanded', 'true'); updateInfo(); }
+  function closePanel() { panel.hidden = true; setBtn.setAttribute('aria-expanded', 'false'); }
+  setBtn.addEventListener('click', e => { e.stopPropagation(); panel.hidden ? openPanel() : closePanel(); });
+  document.addEventListener('click', e => { if (!panel.hidden && !panel.contains(e.target) && e.target !== setBtn) closePanel(); });
+  document.querySelectorAll('.seg').forEach(seg => seg.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    const first = shown()[0] ?? 0;
+    S[seg.dataset.key] = b.dataset.v; saveSettings(); syncSegs();
+    S.idx = first; go(first);
+  }));
+
+  const fsBtn = $('fsBtn');
+  if (!document.documentElement.requestFullscreen) fsBtn.hidden = true;
+  fsBtn.addEventListener('click', () => {
+    if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); return; }
+    document.documentElement.requestFullscreen().catch(() => toast('이 화면에서는 전체 화면을 쓸 수 없어요'));
+  });
+  document.addEventListener('fullscreenchange', () => { fsBtn.textContent = document.fullscreenElement ? '전체 화면 끝내기' : '전체 화면'; });
+
+  function toggleUI() {
+    const hidden = app.classList.toggle('ui-hidden');
+    $('corner').hidden = !hidden;
+    if (hidden) closePanel();
+  }
+
+  // click zones: left third / middle / right third
+  let swiped = false;
+  stage.addEventListener('click', e => {
+    if (swiped) { swiped = false; return; }
+    if (e.target.closest('.banner')) return;
+    if (!panel.hidden) { closePanel(); return; }
+    const r = stage.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width;
+    if (x < 1 / 3) side('left'); else if (x > 2 / 3) side('right'); else toggleUI();
+  });
+
+  // swipe on touch screens
+  let tx = 0, ty = 0, tt = 0;
+  stage.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1) { tt = 0; return; }
+    tx = e.touches[0].clientX; ty = e.touches[0].clientY; tt = Date.now();
+  }, { passive: true });
+  stage.addEventListener('touchend', e => {
+    if (!tt || (window.visualViewport && visualViewport.scale > 1.05)) return;
+    const dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.3 && Date.now() - tt < 800) {
+      swiped = true; setTimeout(() => { swiped = false; }, 400);
+      side(dx < 0 ? 'right' : 'left');
+    }
+    tt = 0;
+  }, { passive: true });
+
+  document.addEventListener('keydown', e => {
+    if (e.target === pageSel || e.altKey || e.ctrlKey || e.metaKey) return;
+    switch (e.key) {
+      case 'ArrowRight': side('right'); break;
+      case 'ArrowLeft': side('left'); break;
+      case 'PageDown': case ' ': next(); break;
+      case 'PageUp': prev(); break;
+      case 'Home': go(0); break;
+      case 'End': go(S.pages.length - 1); break;
+      case 'Escape': closePanel(); return;
+      default: return;
+    }
+    e.preventDefault();
+  });
+
+  let rz;
+  addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { const f = shown()[0] ?? 0; S.idx = f; go(f); }, 80); });
+
+  /* ---------- sample pages (drawn on canvas) ---------- */
+  const LAYOUTS = [
+    [[0, 0, 1, .46], [0, .46, .55, .54], [.55, .46, .45, .54]],
+    [[0, 0, 1, .58], [0, .58, .5, .42], [.5, .58, .5, .42]],
+    [[0, 0, .5, .45], [.5, 0, .5, .45], [0, .45, 1, .55]],
+    [[0, 0, .62, 1], [.62, 0, .38, .5], [.62, .5, .38, .5]],
+    [[0, 0, 1, .3], [0, .3, 1, .45], [0, .75, .6, .25], [.6, .75, .4, .25]],
+    [[0, 0, 1, 1]]
+  ];
+  const LINES = [
+    ['컷넘김 뷰어에', '오신 걸 환영해요'],
+    ['화면 오른쪽을', '누르면 다음 쪽'],
+    ['화면 왼쪽을', '누르면 이전 쪽'],
+    ['가운데를 누르면', '메뉴가 숨어요'],
+    ['위의 쪽 번호로', '원하는 쪽에 가요'],
+    ['이제 내 만화를', '열어 보세요!']
+  ];
+  function makeSample(i) {
+    const W = 900, H = 1300, M = 56, G = 20;
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const g = c.getContext('2d');
+    g.fillStyle = '#F7F6F2'; g.fillRect(0, 0, W, H);
+    const iw = W - 2 * M, ih = H - 2 * M - 50;
+    const panels = LAYOUTS[i].map(([x, y, w, h]) => ({ x: M + x * iw + G / 2, y: M + y * ih + G / 2, w: w * iw - G, h: h * ih - G }));
+    let big = 0; panels.forEach((p, k) => { if (p.w * p.h > panels[big].w * panels[big].h) big = k; });
+    let usedLines = false;
+    panels.forEach((p, k) => {
+      g.save(); g.beginPath(); g.rect(p.x, p.y, p.w, p.h); g.clip();
+      if (k === big) {
+        g.fillStyle = '#1B1B1F';
+        for (let yy = p.y, row = 0; yy < p.y + p.h + 14; yy += 14, row++) {
+          const r = 0.6 + ((yy - p.y) / p.h) * 4.6;
+          for (let xx = p.x + (row % 2 ? 7 : 0); xx < p.x + p.w + 14; xx += 14) { g.beginPath(); g.arc(xx, yy, r, 0, 6.2832); g.fill(); }
+        }
+      } else if (!usedLines) {
+        usedLines = true;
+        const cx = p.x + p.w / 2, cy = p.y + p.h / 2, r1 = Math.min(p.w, p.h) * .22, r2 = Math.max(p.w, p.h);
+        g.strokeStyle = '#1B1B1F';
+        for (let a = 0; a < 140; a++) {
+          const ang = a / 140 * 6.2832; g.lineWidth = (a % 3) + .6;
+          g.beginPath(); g.moveTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1); g.lineTo(cx + Math.cos(ang) * r2, cy + Math.sin(ang) * r2); g.stroke();
+        }
+      } else {
+        g.fillStyle = k % 2 ? '#D8D6CF' : '#E7E5DF'; g.fillRect(p.x, p.y, p.w, p.h);
+      }
+      g.restore();
+      g.lineWidth = 6; g.strokeStyle = '#111'; g.strokeRect(p.x, p.y, p.w, p.h);
+    });
+    // speech bubble on the biggest panel
+    const p = panels[big], cx = p.x + p.w / 2, cy = p.y + p.h * .45;
+    const rx = Math.min(p.w * .42, 320), ry = Math.min(p.h * .3, 120);
+    g.fillStyle = '#FFFFFF'; g.strokeStyle = '#111'; g.lineWidth = 5;
+    g.beginPath(); g.moveTo(cx - 30, cy + ry * .8); g.lineTo(cx - 70, cy + ry + 60); g.lineTo(cx + 10, cy + ry * .9); g.closePath(); g.fill(); g.stroke();
+    g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, 6.2832); g.fill(); g.stroke();
+    g.fillStyle = '#FFFFFF'; g.beginPath(); g.moveTo(cx - 28, cy + ry * .8); g.lineTo(cx + 8, cy + ry * .88); g.lineTo(cx - 10, cy + ry * .6); g.fill();
+    g.fillStyle = '#111'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = 'bold 42px "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif';
+    LINES[i].forEach((ln, k) => g.fillText(ln, cx, cy + (k - (LINES[i].length - 1) / 2) * 54));
+    // margins
+    g.font = '600 22px sans-serif'; g.textAlign = 'left'; g.fillStyle = '#8A877F'; g.fillText('예시', M, M / 2);
+    g.textAlign = 'center'; g.fillStyle = '#333'; g.font = '500 28px "JetBrains Mono", monospace';
+    g.fillText('— ' + (i + 1) + ' —', W / 2, H - M / 2 - 14);
+    return c.toDataURL('image/jpeg', 0.86);
+  }
+
+  function boot() {
+    S.pages = LAYOUTS.map((_, i) => ({ url: makeSample(i), name: '예시-' + String(i + 1).padStart(2, '0') + '.jpg' }));
+    syncSegs(); buildSelect(); render();
+    setTimeout(() => $('zones').classList.add('gone'), 3200);
+  }
+  boot();
+})();
+</script>
